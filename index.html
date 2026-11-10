@@ -38,7 +38,8 @@ main{padding:14px;max-width:100%}
 .ex h3{margin:0;font-size:22px;line-height:1.25;overflow-wrap:anywhere}
 .rx{font-size:34px;font-weight:800;line-height:1.15;letter-spacing:-0.02em;margin:8px 0 12px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .wt{font-size:34px;font-weight:700;min-height:76px;padding:12px 16px;font-variant-numeric:tabular-nums}
-.notes{border-color:#b08a2e;min-height:168px;font-size:20px;line-height:1.45;padding:16px}
+.notes{border-color:#b08a2e;min-height:calc(1.45em + 34px);font-size:20px;line-height:1.45;padding:16px;resize:none;overflow:hidden}
+.notes::placeholder{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 label{font-size:16px;color:#c5ced6;display:block;margin:14px 0 6px;font-weight:600}
 .banner{background:#13261a;color:#8fe3a5;border-radius:12px;padding:12px 14px;font-size:17px;margin:12px 0 0}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
@@ -187,8 +188,8 @@ function render(){tabs();const a=$('#app');
   const cueHtml=x.showCue&&x.cue?`<p class="cue">${esc(x.cue)}</p>`:'';
   h+=`<div class="card ex"><h3>${esc(x.name)}</h3><div class="rx">${esc(x.sets)} × ${esc(x.reps)}</div>${cueHtml}${restBtn}
   <label for="w-${x.id}">Weight (${esc(S.unit)})</label><input id="w-${x.id}" class="wt" inputmode="decimal" autocomplete="off" enterkeyhint="done" aria-label="Weight in ${esc(S.unit)}" data-weight="${x.id}" value="${esc(x.weight)}">
-  <label for="n-${x.id}">Notes</label><textarea id="n-${x.id}" class="notes" data-notes="${x.id}" placeholder="Cue, seat, what to remember…">${esc(x.notes)}</textarea></div>`});
- a.innerHTML=h}
+  <label for="n-${x.id}">Notes</label><textarea id="n-${x.id}" class="notes" rows="1" data-notes="${x.id}" placeholder="Cue, seat, what to remember…">${esc(x.notes)}</textarea></div>`});
+ a.innerHTML=h;fitAllNotes()}
 function renderInfo(a){a.innerHTML=`<div class="card"><h3>Week</h3><div class="row"><button data-wk="-1">−</button><b class="grow" style="text-align:center">Week ${S.week} of 12</b><button data-wk="1">+</button></div>${[4,8,12].includes(+S.week)?'<p class="banner">Deload week: 2 sets per exercise.</p>':''}</div>
 <div class="card"><h3>📈 Progression rule</h3><p>Add reps until you hit the top of the range on all sets, then make the smallest load jump and work back up. Deload weeks 4, 8 and 12: drop to 2 sets.</p></div>
 <div class="card" style="border-color:#7a2a30"><h3>⚠️ Back rule</h3><p>Stop and see a physio for sharp pain, or any pain, numbness or tingling down a leg.</p></div>`}
@@ -232,7 +233,7 @@ document.addEventListener('click',e=>{const t=e.target.closest('button');if(!t)r
 });
 document.addEventListener('input',e=>{const t=e.target,D=t.dataset;
  if(D.weight){const x=findEx(D.weight);if(x){x.weight=t.value;save()}return}
- if(D.notes){const x=findEx(D.notes);if(x){x.notes=t.value;save()}return}
+ if(D.notes){const x=findEx(D.notes);if(x){x.notes=t.value;save()}fitNotes(t);return}
  if(D.wedit){if(S.warmup[+D.wedit]){S.warmup[+D.wedit].text=t.value;save()}return}
  if(D.dt){if(S.days[+D.dt]){S.days[+D.dt].title=t.value;save();tabs()}return}
  if(D.e){const[a,b,f]=D.e.split(',');const x=S.days[+a]&&S.days[+a].ex[+b];if(!x)return;let v=t.value;if(f==='rest'||f==='sets')v=v===''?'':(+v||0);x[f]=v;save()}
@@ -242,11 +243,16 @@ document.addEventListener('change',e=>{const t=e.target,D=t.dataset;
  if(D.dl){if(S.days[+D.dl]){S.days[+D.dl].lifting=t.checked;save()}return}
  if(t.id==='file'&&t.files[0]){const r=new FileReader();r.onload=()=>{if(confirm('Replace all data with this file?'))doImport(r.result)};r.readAsText(t.files[0])}
 });
-let tEnd=0,tInt=null,actx=null;
+function fitNotes(el){if(!el||!el.classList||!el.classList.contains('notes'))return;if(!el.value){el.style.height='';return}el.style.height='auto';const b=el.offsetHeight-el.clientHeight;el.style.height=(el.scrollHeight+Math.max(0,b))+'px'}
+function fitAllNotes(){document.querySelectorAll('textarea.notes').forEach(fitNotes)}
+window.addEventListener('resize',fitAllNotes);
+let tEnd=0,tInt=null,actx=null,tWarned=false;
+function unlockAudio(){try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;actx=actx||new AC();if(actx.resume)actx.resume();const buf=actx.createBuffer(1,1,22050),src=actx.createBufferSource();src.buffer=buf;src.connect(actx.destination);src.start?src.start(0):src.noteOn(0)}catch(e){}}
 function beep(){try{actx=actx||new(window.AudioContext||window.webkitAudioContext)();[0,.35,.7].forEach(o=>{const g=actx.createGain(),os=actx.createOscillator();os.frequency.value=880;os.connect(g);g.connect(actx.destination);g.gain.setValueAtTime(.4,actx.currentTime+o);g.gain.exponentialRampToValueAtTime(.001,actx.currentTime+o+.25);os.start(actx.currentTime+o);os.stop(actx.currentTime+o+.3)})}catch(e){}}
-function startTimer(sec){try{actx=actx||new(window.AudioContext||window.webkitAudioContext)();actx.resume&&actx.resume()}catch(e){}
- tEnd=Date.now()+sec*1000;$('#timer').style.display='flex';clearInterval(tInt);tick();tInt=setInterval(tick,250)}
+function beepShort(){try{if(!actx)return;const t=actx.currentTime,o=actx.createOscillator(),g=actx.createGain();o.frequency.value=880;o.connect(g);g.connect(actx.destination);g.gain.setValueAtTime(.4,t);g.gain.exponentialRampToValueAtTime(.001,t+.2);o.start(t);o.stop(t+.22)}catch(e){}}
+function startTimer(sec){unlockAudio();tWarned=!(sec>=10);tEnd=Date.now()+sec*1000;$('#timer').style.display='flex';clearInterval(tInt);tick();tInt=setInterval(tick,250)}
 function tick(){const r=Math.max(0,Math.ceil((tEnd-Date.now())/1000));$('#tt').textContent='⏱ '+Math.floor(r/60)+':'+String(r%60).padStart(2,'0');
+ if(r>0&&r<=10&&!tWarned){tWarned=true;beepShort()}
  if(r<=0){clearInterval(tInt);tInt=null;beep();if(navigator.vibrate)navigator.vibrate([300,150,300]);$('#tt').textContent='✅ Go!';setTimeout(()=>{if(!tInt)$('#timer').style.display='none'},4000)}}
 function stopTimer(){clearInterval(tInt);tInt=null;$('#timer').style.display='none'}
 render();
