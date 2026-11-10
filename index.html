@@ -45,8 +45,10 @@ label{font-size:16px;color:#c5ced6;display:block;margin:14px 0 6px;font-weight:6
 #timer{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));background:#2f7cf6;border-radius:16px;padding:12px;display:none;align-items:center;gap:10px;font-size:28px;font-weight:700;z-index:9}
 #timer button{background:#0006;border:0;min-height:48px}
 details summary{min-height:48px;display:flex;align-items:center;font-weight:650;font-size:18px}
-.chk{display:flex;gap:12px;align-items:center;min-height:48px;margin:0;font-size:18px;font-weight:500;color:#e8eaed}
+.chk{display:flex;gap:12px;align-items:flex-start;min-height:48px;margin:0;padding-top:8px;font-size:18px;font-weight:500;color:#e8eaed}
 .chk input{width:32px;height:32px;flex:0 0 auto}
+.chk span{min-width:0;overflow-wrap:anywhere}
+.cue{font-size:20px;line-height:1.45;margin:0 0 12px;overflow-wrap:anywhere}
 button:focus-visible,input:focus,textarea:focus{outline:2px solid #2f7cf6;outline-offset:2px}
 </style></head><body>
 <header><h1><span>🏋️ Training</span><button class="sm" id="wk"></button></h1><div class="tabs" id="tabs"></div></header>
@@ -55,15 +57,71 @@ button:focus-visible,input:focus,textarea:focus{outline:2px solid #2f7cf6;outlin
 <script>
 'use strict';
 const KEY='samTrainingV1';
+const PROGRAM_REV=3;
+const WRIST_STRETCH={kind:'wrist-stretch',text:"Étirements des poignets (fléchisseurs et extenseurs) — 2 x 20-30 s par côté — bras tendu, doigts vers le bas puis vers le haut, tirer doucement avec l'autre main, sans douleur"};
+const WRIST_ROTATION={kind:'wrist-rotation',text:'Rotations des poignets — 10 par sens'};
+const DIP_NAME='Dips assis à la machine';
+const DIP_CUE="poignets droits dans l'axe de l'avant-bras, prise détendue. Sans machine : extension triceps à la barre droite, léger, mêmes consignes. Arrêter si douleur côté pouce";
 const ICON="data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="#2f7cf6"/><path d="M96 216h40v80H96zM136 186h40v140h-40zM336 186h40v140h-40zM376 216h40v80h-40zM176 236h160v40H176z" fill="#fff"/></svg>');
 document.getElementById('ati').href=ICON;document.getElementById('fav').href=ICON;
 document.getElementById('mf').href='data:application/manifest+json,'+encodeURIComponent(JSON.stringify({name:'Training',short_name:'Training',display:'standalone',background_color:'#111418',theme_color:'#111418',start_url:'.',icons:[{src:ICON,sizes:'512x512',type:'image/svg+xml'}]}));
 const uid=()=>Math.random().toString(36).slice(2,10);
-const E=(name,sets,reps,rest,cue)=>({id:uid(),name,sets,reps,rest,cue:cue||'',notes:'',weight:''});
-function defaults(){return{week:1,unit:'lb',
-warmup:['5 min bike or brisk walk','Cat-cow 1x8','90/90 hip switches 1x6/side','Glute bridge 1x10','Bird dog 1x5/side, 3 s hold','1–2 light warm-up sets on first lift'].map(t=>({id:uid(),text:t})),
+const E=(name,sets,reps,rest,cue,notes)=>({id:uid(),name,sets,reps,rest,cue:cue||'',notes:notes==null?'':String(notes),weight:''});
+const fold=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+function wristKindOf(w){
+ if(!w)return '';
+ if(w.kind==='wrist-stretch'||w.kind==='wrist-rotation')return w.kind;
+ const t=fold(w.text);
+ if(/rotations des poignets/.test(t))return 'wrist-rotation';
+ if(/etirements des poignets/.test(t)||(/flechisseurs/.test(t)&&/extenseurs/.test(t)))return 'wrist-stretch';
+ return '';
+}
+function warmItem(src){
+ const text=src&&src.text==null?'':String(src.text);
+ const kind=wristKindOf({kind:src&&src.kind,text});
+ const o={id:(src&&src.id)||uid(),text};
+ if(kind)o.kind=kind;
+ return o;
+}
+function withWristWarmup(list){
+ const out=(Array.isArray(list)?list:[]).filter(w=>w&&(typeof w==='object'||typeof w==='string')).map(w=>warmItem(typeof w==='string'?{text:w}:w));
+ function insert(src,afterKind){
+  if(out.some(w=>w.kind===src.kind))return;
+  const item=warmItem({id:uid(),kind:src.kind,text:src.text});
+  const after=afterKind?out.findIndex(w=>w.kind===afterKind):-1;
+  if(after>=0){out.splice(after+1,0,item);return}
+  const anchor=out.findIndex(w=>/warm-up sets|series d.echauffement/.test(fold(w.text)));
+  if(anchor>=0)out.splice(anchor,0,item);else out.push(item);
+ }
+ insert(WRIST_STRETCH);
+ insert(WRIST_ROTATION,'wrist-stretch');
+ return out;
+}
+function isDipName(name){const n=fold(name);return /dips?\s+assis/.test(n)||/seated\s+dip/.test(n)}
+function isPushdownName(name){
+ const n=fold(name).replace(/push\s*-?\s*down/g,'pushdown');
+ if(isDipName(n))return false;
+ return /rope\s+triceps\s+pushdown/.test(n)||/triceps\s+pushdown/.test(n)||(/pushdown/.test(n)&&/triceps|rope|corde/.test(n))||(/extension\s+triceps/.test(n)&&/corde|poulie|rope/.test(n));
+}
+function isChestDay(d){const t=fold(d&&d.title);return /chest/.test(t)||/pector/.test(t)||(/shoulder|epaule/.test(t)&&/triceps/.test(t))}
+function applyDip(days){
+ let found=false;
+ (days||[]).forEach(d=>{(d.ex||[]).forEach(x=>{
+  if(!x||!isPushdownName(x.name))return;
+  found=true;
+  x.name=DIP_NAME;x.sets=3;x.reps='10–15';x.rest=60;x.cue=DIP_CUE;x.showCue=true;
+ })});
+ if(found)return;
+ const day=(days||[]).find(d=>isChestDay(d)&&Array.isArray(d.ex)&&d.ex.length);
+ if(!day||day.ex.some(x=>x&&(isDipName(x.name)||isPushdownName(x.name))))return;
+ const dip=E(DIP_NAME,3,'10–15',60,DIP_CUE);dip.showCue=true;
+ const at=day.ex.findIndex(x=>x&&/dead\s*bug|insecte\s*mort/.test(fold(x.name)));
+ if(at<0)day.ex.push(dip);else day.ex.splice(at,0,dip);
+}
+function defaults(){return{week:1,unit:'lb',programRev:PROGRAM_REV,
+warmup:withWristWarmup(['5 min bike or brisk walk','Cat-cow 1x8','90/90 hip switches 1x6/side','Glute bridge 1x10','Bird dog 1x5/side, 3 s hold','1–2 light warm-up sets on first lift'].map(t=>({id:uid(),text:t}))),
 days:[
-{id:uid(),title:'Day 1 — Chest, shoulders & triceps (Monday)',lifting:true,ex:[E('Flat dumbbell press',3,'8–12',120,'Feet planted, elbows ~45°'),E('Incline dumbbell press',3,'8–12',90,'Bench 30°, control down'),E('Seated shoulder press',3,'8–12',90,"Back on pad, ribs down, don't arch"),E('Dumbbell lateral raise',3,'12–15',60,'Lead with elbows, stop at shoulder height'),E('Rear deltoid fly',3,'12–15',60,'Machine or chest on incline bench'),E('Rope triceps pushdown',3,'10–15',60,'Elbows pinned, stand tall'),E('Dead bug',3,'8/side',60,'Low back pressed to floor, exhale as you reach')]},
+{id:uid(),title:'Day 1 — Chest, shoulders & triceps (Monday)',lifting:true,ex:[E('Flat dumbbell press',3,'8–12',120,'Feet planted, elbows ~45°'),E('Incline dumbbell press',3,'8–12',90,'Bench 30°, control down'),E('Seated shoulder press',3,'8–12',90,"Back on pad, ribs down, don't arch"),E('Dumbbell lateral raise',3,'12–15',60,'Lead with elbows, stop at shoulder height'),E('Rear deltoid fly',3,'12–15',60,'Machine or chest on incline bench'),Object.assign(E(DIP_NAME,3,'10–15',60,DIP_CUE),{showCue:true}),E('Dead bug',3,'8/side',60,'Low back pressed to floor, exhale as you reach')]},
 {id:uid(),title:'Day 2 — Back & biceps (Wednesday)',lifting:true,ex:[E('Lat pulldown',3,'8–12',120,'Elbows to back pockets, no leaning way back'),E('Chest-supported dumbbell row',3,'10–12',90),E('Seated row',3,'8–12',90,'Chest tall, no rocking'),E('Preacher curl',3,'10–12',60),E('Incline bench dumbbell curl',3,'10–12',60),E('Hammer curl',2,'12–15',60),E('Side plank',3,'20–30 s/side',60)]},
 {id:uid(),title:'Day 3 — Legs (Saturday)',lifting:true,ex:[E('Leg press',3,'10–15',120,'Stop before hips tuck or low back lifts off the pad; feet slightly higher'),E('Bulgarian split squat',3,'8–12/leg',90,'Torso upright'),E('Hip thrust',3,'10–15',90,'Chin tucked, ribs down, no arching at top'),E('Leg curl',3,'10–15',90),E('Hip abductor machine',2,'15–20',60),E('Pallof press',3,'10/side',60,'Resist rotation, no twisting')]},
 {id:uid(),title:'Cardio — Tue & Thu',lifting:false,ex:[E('Brisk walk / incline treadmill / bike',1,'30–45 min',60,'Conversational pace'),E('McGill curl-up',3,'5 (10 s holds)',60),E('Bird dog',2,'6/side',60)]}]};}
@@ -73,21 +131,33 @@ function latestWeight(logs,id){try{
  for(let i=dates.length-1;i>=0;i--){const sets=bag[dates[i]]&&bag[dates[i]].sets;if(!Array.isArray(sets))continue;
   for(let j=sets.length-1;j>=0;j--){const w=sets[j]&&sets[j].w;if(w!=null&&String(w).trim()!=='')return String(w)}}
 }catch(e){}return ''}
+function bag(v){return v&&typeof v==='object'&&!Array.isArray(v)?v:null}
 function normalize(raw){
- const logs=raw.logs&&typeof raw.logs==='object'&&!Array.isArray(raw.logs)?raw.logs:{};
+ const logs=bag(raw.logs);
+ const sessions=bag(raw.sessions);
  const weekN=Math.round(+raw.week);const week=Number.isFinite(weekN)?Math.min(12,Math.max(1,weekN)):1;
  const unit=raw.unit==='kg'?'kg':'lb';
- const warmup=Array.isArray(raw.warmup)?raw.warmup.filter(w=>w&&(typeof w==='object'||typeof w==='string')).map(w=>{
-  if(typeof w==='string')return{id:uid(),text:w};return{id:w.id||uid(),text:w.text==null?'':String(w.text)}}):[];
- const days=raw.days.filter(d=>d&&typeof d==='object').map(d=>({
+ const revN=Math.round(+raw.programRev);const programRev=Number.isFinite(revN)&&revN>0?revN:0;
+ const warmup=Array.isArray(raw.warmup)?raw.warmup.filter(w=>w&&(typeof w==='object'||typeof w==='string')).map(w=>warmItem(typeof w==='string'?{text:w}:w)):[];
+ const days=(Array.isArray(raw.days)?raw.days:[]).filter(d=>d&&typeof d==='object').map(d=>({
   id:d.id||uid(),title:d.title==null?'Day':String(d.title),lifting:!!d.lifting,
   ex:(Array.isArray(d.ex)?d.ex:[]).filter(x=>x&&typeof x==='object').map(x=>{
    const id=x.id||uid();
    const weight=x.weight!=null&&String(x.weight)!==''?String(x.weight):latestWeight(logs,id);
-   return{id,name:x.name==null?'Exercise':String(x.name),sets:x.sets==null||x.sets===''?3:x.sets,reps:x.reps==null?'':String(x.reps),rest:x.rest==null||x.rest===''?60:x.rest,cue:x.cue==null?'':String(x.cue),notes:x.notes==null?'':String(x.notes),weight}})}));
- return{week,unit,warmup,days}}
+   return{id,name:x.name==null?'Exercise':String(x.name),sets:x.sets==null||x.sets===''?3:x.sets,reps:x.reps==null?'':String(x.reps),rest:x.rest==null||x.rest===''?60:x.rest,cue:x.cue==null?'':String(x.cue),notes:x.notes==null?'':String(x.notes),weight,showCue:!!x.showCue}})}));
+ const out={week,unit,programRev,warmup,days};
+ if(logs)out.logs=logs;
+ if(sessions)out.sessions=sessions;
+ return out}
+function migrate(s){
+ if(!s||typeof s!=='object')return s;
+ if((+s.programRev||0)>=PROGRAM_REV)return s;
+ s.warmup=withWristWarmup(s.warmup);
+ applyDip(s.days);
+ s.programRev=PROGRAM_REV;
+ return s}
 function load(){let raw=null;try{raw=JSON.parse(localStorage.getItem(KEY)||'')}catch(e){raw=null}
- if(!raw||typeof raw!=='object'||!Array.isArray(raw.days))return defaults();return normalize(raw)}
+ if(!raw||typeof raw!=='object'||!Array.isArray(raw.days))raw=defaults();return migrate(normalize(raw))}
 let S=load();
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};save();
 const warmOn={};
@@ -102,16 +172,18 @@ function render(){tabs();const a=$('#app');
  if(view.tab==='edit')return renderEdit(a);if(view.tab==='info')return renderInfo(a);if(view.tab==='data')return renderData(a);
  const d=S.days.find(x=>x.id===view.tab);if(!d){view.tab='edit';return render()}
  let h=`<div class="card"><div class="row"><h2 class="grow">${esc(d.title)}</h2><button id="unit" class="unit" aria-label="Weight unit">Unit: ${esc(S.unit)}</button></div></div>`;
- if(d.lifting)h+=`<div class="card"><details><summary>🔥 Warm-up checklist</summary>${S.warmup.map(w=>`<label class="chk"><input type="checkbox" data-warm="${w.id}" ${warmOn[w.id]?'checked':''}> ${esc(w.text)}</label>`).join('')}</details></div>`;
+ const warm=Array.isArray(S.warmup)?(d.lifting?S.warmup:S.warmup.filter(w=>w.kind==='wrist-stretch'||w.kind==='wrist-rotation')):[];
+ if(warm.length)h+=`<div class="card"><details><summary>🔥 Warm-up checklist</summary>${warm.map(w=>`<label class="chk"><input type="checkbox" data-warm="${w.id}" ${warmOn[w.id]?'checked':''}> <span>${esc(w.text)}</span></label>`).join('')}</details></div>`;
  d.ex.forEach(x=>{const rest=+x.rest;const restBtn=rest>0?`<button class="sm rest" data-timer="${rest}">⏱ Rest ${rest}s</button>`:'';
-  h+=`<div class="card ex"><h3>${esc(x.name)}</h3><div class="rx">${esc(x.sets)} × ${esc(x.reps)}</div>${restBtn}
+  const cueHtml=x.showCue&&x.cue?`<p class="cue">${esc(x.cue)}</p>`:'';
+  h+=`<div class="card ex"><h3>${esc(x.name)}</h3><div class="rx">${esc(x.sets)} × ${esc(x.reps)}</div>${cueHtml}${restBtn}
   <label for="w-${x.id}">Weight (${esc(S.unit)})</label><input id="w-${x.id}" class="wt" inputmode="decimal" autocomplete="off" enterkeyhint="done" aria-label="Weight in ${esc(S.unit)}" data-weight="${x.id}" value="${esc(x.weight)}">
   <label for="n-${x.id}">Notes</label><textarea id="n-${x.id}" class="notes" data-notes="${x.id}" placeholder="Cue, seat, what to remember…">${esc(x.notes)}</textarea></div>`});
  a.innerHTML=h}
 function renderInfo(a){a.innerHTML=`<div class="card"><h3>Week</h3><div class="row"><button data-wk="-1">−</button><b class="grow" style="text-align:center">Week ${S.week} of 12</b><button data-wk="1">+</button></div>${[4,8,12].includes(+S.week)?'<p class="banner">Deload week: 2 sets per exercise.</p>':''}</div>
 <div class="card"><h3>📈 Progression rule</h3><p>Add reps until you hit the top of the range on all sets, then make the smallest load jump and work back up. Deload weeks 4, 8 and 12: drop to 2 sets.</p></div>
 <div class="card" style="border-color:#7a2a30"><h3>⚠️ Back rule</h3><p>Stop and see a physio for sharp pain, or any pain, numbness or tingling down a leg.</p></div>`}
-function renderEdit(a){let h=`<div class="card"><h3>🔥 Warm-up (lifting days)</h3>${S.warmup.map((w,i)=>`<div class="row" style="margin:8px 0"><input class="grow" style="width:auto" data-wedit="${i}" value="${esc(w.text)}"><button class="sm" data-wup="${i}">↑</button><button class="sm dng" data-wdel="${i}">✕</button></div>`).join('')}<button data-wadd>+ Warm-up item</button></div>`;
+function renderEdit(a){let h=`<div class="card"><h3>🔥 Warm-up</h3><p class="mut">Wrist stretches show on every day, including cardio. Other lines show when “Show warm-up” is checked.</p>${S.warmup.map((w,i)=>`<div class="row" style="margin:8px 0"><input class="grow" style="width:auto" data-wedit="${i}" value="${esc(w.text)}"><button class="sm" data-wup="${i}">↑</button><button class="sm dng" data-wdel="${i}">✕</button></div>`).join('')}<button data-wadd>+ Warm-up item</button></div>`;
  S.days.forEach((d,di)=>{h+=`<div class="card"><label>Day title</label><input data-dt="${di}" value="${esc(d.title)}">
  <div class="row" style="margin-top:8px"><label class="chk grow"><input type="checkbox" data-dl="${di}" ${d.lifting?'checked':''}> Show warm-up</label><button class="sm" data-dup="${di}">↑</button><button class="sm" data-ddn="${di}">↓</button><button class="sm dng" data-ddel="${di}">Delete day</button></div>`;
   d.ex.forEach((x,xi)=>{h+=`<div class="card" style="background:#14181d"><label>Exercise name</label><input data-e="${di},${xi},name" value="${esc(x.name)}">
@@ -124,7 +196,7 @@ function renderData(a){a.innerHTML=`<div class="card"><h3>Export</h3><button cla
 <div class="card"><h3>Import</h3><input type="file" id="file" accept=".json,application/json"><label>…or paste JSON</label><textarea id="paste"></textarea><button id="imp" style="width:100%;margin-top:8px">Import pasted JSON</button><p class="mut">Import replaces all current data.</p></div>
 <div class="card"><button class="dng" id="reset" style="width:100%">Reset to default program</button><p class="mut">Erases days, exercises, notes and weights.</p></div>`}
 function doImport(txt){let o;try{o=JSON.parse(txt)}catch(e){alert('Invalid JSON');return false}if(!o||!Array.isArray(o.days)){alert('Not a Training backup');return false}
- S=normalize(o);save();view.tab=S.days[0]?S.days[0].id:'edit';render();alert('Imported');return true}
+ S=migrate(normalize(o));save();view.tab=S.days[0]?S.days[0].id:'edit';render();alert('Imported');return true}
 const mv=(arr,i,d)=>{const j=i+d;if(j<0||j>=arr.length)return;[arr[i],arr[j]]=[arr[j],arr[i]]};
 document.addEventListener('click',e=>{const t=e.target.closest('button');if(!t)return;const D=t.dataset;
  if(t.id==='wk'){view.tab='info';return render()}
@@ -146,7 +218,7 @@ document.addEventListener('click',e=>{const t=e.target.closest('button');if(!t)r
  if(t.id==='exp'){const b=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});const u=URL.createObjectURL(b);const l=document.createElement('a');l.href=u;l.download='training-backup-'+today()+'.json';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);return}
  if(t.id==='cpy'){const j=JSON.stringify(S);(navigator.clipboard?navigator.clipboard.writeText(j):Promise.reject()).then(()=>alert('Copied'),()=>{$('#paste').value=j;alert('Copy from the box below')});return}
  if(t.id==='imp'){if(confirm('Replace all data with pasted JSON?'))doImport($('#paste').value);return}
- if(t.id==='reset'){if(confirm('Reset everything to the default program? This erases your notes and weights.')){S=defaults();save();view.tab=S.days[0].id;render()}return}
+ if(t.id==='reset'){if(confirm('Reset everything to the default program? This erases your notes and weights.')){S=migrate(normalize(defaults()));save();view.tab=S.days[0].id;render()}return}
  if(t.id==='tstop')return stopTimer();if(t.id==='tplus'){tEnd+=15000;return}
 });
 document.addEventListener('input',e=>{const t=e.target,D=t.dataset;
