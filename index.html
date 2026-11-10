@@ -57,11 +57,13 @@ button:focus-visible,input:focus,textarea:focus{outline:2px solid #2f7cf6;outlin
 <script>
 'use strict';
 const KEY='samTrainingV1';
-const PROGRAM_REV=3;
+const PROGRAM_REV=4;
 const WRIST_STRETCH={kind:'wrist-stretch',text:"Étirements des poignets (fléchisseurs et extenseurs) — 2 x 20-30 s par côté — bras tendu, doigts vers le bas puis vers le haut, tirer doucement avec l'autre main, sans douleur"};
 const WRIST_ROTATION={kind:'wrist-rotation',text:'Rotations des poignets — 10 par sens'};
 const DIP_NAME='Dips assis à la machine';
 const DIP_CUE="poignets droits dans l'axe de l'avant-bras, prise détendue. Sans machine : extension triceps à la barre droite, léger, mêmes consignes. Arrêter si douleur côté pouce";
+const BAR_NAME='Medium bar cable pushdown';
+const BAR_CUE='Wrists straight and neutral, elbows tucked; stop if the thumb side of the wrist hurts.';
 const ICON="data:image/svg+xml,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="#2f7cf6"/><path d="M96 216h40v80H96zM136 186h40v140h-40zM336 186h40v140h-40zM376 216h40v80h-40zM176 236h160v40H176z" fill="#fff"/></svg>');
 document.getElementById('ati').href=ICON;document.getElementById('fav').href=ICON;
 document.getElementById('mf').href='data:application/manifest+json,'+encodeURIComponent(JSON.stringify({name:'Training',short_name:'Training',display:'standalone',background_color:'#111418',theme_color:'#111418',start_url:'.',icons:[{src:ICON,sizes:'512x512',type:'image/svg+xml'}]}));
@@ -118,10 +120,16 @@ function applyDip(days){
  const at=day.ex.findIndex(x=>x&&/dead\s*bug|insecte\s*mort/.test(fold(x.name)));
  if(at<0)day.ex.push(dip);else day.ex.splice(at,0,dip);
 }
+function applyMediumBar(days){
+ (days||[]).forEach(d=>{(d.ex||[]).forEach(x=>{
+  if(!x||!(isDipName(x.name)||isPushdownName(x.name)))return;
+  x.name=BAR_NAME;x.sets=3;x.reps='10–15';x.rest=60;x.cue=BAR_CUE;x.showCue=true;
+ })});
+}
 function defaults(){return{week:1,unit:'lb',programRev:PROGRAM_REV,
 warmup:withWristWarmup(['5 min bike or brisk walk','Cat-cow 1x8','90/90 hip switches 1x6/side','Glute bridge 1x10','Bird dog 1x5/side, 3 s hold','1–2 light warm-up sets on first lift'].map(t=>({id:uid(),text:t}))),
 days:[
-{id:uid(),title:'Day 1 — Chest, shoulders & triceps (Monday)',lifting:true,ex:[E('Flat dumbbell press',3,'8–12',120,'Feet planted, elbows ~45°'),E('Incline dumbbell press',3,'8–12',90,'Bench 30°, control down'),E('Seated shoulder press',3,'8–12',90,"Back on pad, ribs down, don't arch"),E('Dumbbell lateral raise',3,'12–15',60,'Lead with elbows, stop at shoulder height'),E('Rear deltoid fly',3,'12–15',60,'Machine or chest on incline bench'),Object.assign(E(DIP_NAME,3,'10–15',60,DIP_CUE),{showCue:true}),E('Dead bug',3,'8/side',60,'Low back pressed to floor, exhale as you reach')]},
+{id:uid(),title:'Day 1 — Chest, shoulders & triceps (Monday)',lifting:true,ex:[E('Flat dumbbell press',3,'8–12',120,'Feet planted, elbows ~45°'),E('Incline dumbbell press',3,'8–12',90,'Bench 30°, control down'),E('Seated shoulder press',3,'8–12',90,"Back on pad, ribs down, don't arch"),E('Dumbbell lateral raise',3,'12–15',60,'Lead with elbows, stop at shoulder height'),E('Rear deltoid fly',3,'12–15',60,'Machine or chest on incline bench'),Object.assign(E(BAR_NAME,3,'10–15',60,BAR_CUE),{showCue:true}),E('Dead bug',3,'8/side',60,'Low back pressed to floor, exhale as you reach')]},
 {id:uid(),title:'Day 2 — Back & biceps (Wednesday)',lifting:true,ex:[E('Lat pulldown',3,'8–12',120,'Elbows to back pockets, no leaning way back'),E('Chest-supported dumbbell row',3,'10–12',90),E('Seated row',3,'8–12',90,'Chest tall, no rocking'),E('Preacher curl',3,'10–12',60),E('Incline bench dumbbell curl',3,'10–12',60),E('Hammer curl',2,'12–15',60),E('Side plank',3,'20–30 s/side',60)]},
 {id:uid(),title:'Day 3 — Legs (Saturday)',lifting:true,ex:[E('Leg press',3,'10–15',120,'Stop before hips tuck or low back lifts off the pad; feet slightly higher'),E('Bulgarian split squat',3,'8–12/leg',90,'Torso upright'),E('Hip thrust',3,'10–15',90,'Chin tucked, ribs down, no arching at top'),E('Leg curl',3,'10–15',90),E('Hip abductor machine',2,'15–20',60),E('Pallof press',3,'10/side',60,'Resist rotation, no twisting')]},
 {id:uid(),title:'Cardio — Tue & Thu',lifting:false,ex:[E('Brisk walk / incline treadmill / bike',1,'30–45 min',60,'Conversational pace'),E('McGill curl-up',3,'5 (10 s holds)',60),E('Bird dog',2,'6/side',60)]}]};}
@@ -151,9 +159,10 @@ function normalize(raw){
  return out}
 function migrate(s){
  if(!s||typeof s!=='object')return s;
- if((+s.programRev||0)>=PROGRAM_REV)return s;
- s.warmup=withWristWarmup(s.warmup);
- applyDip(s.days);
+ const rev=+s.programRev||0;
+ if(rev>=PROGRAM_REV)return s;
+ if(rev<3){s.warmup=withWristWarmup(s.warmup);applyDip(s.days)}
+ applyMediumBar(s.days);
  s.programRev=PROGRAM_REV;
  return s}
 function load(){let raw=null;try{raw=JSON.parse(localStorage.getItem(KEY)||'')}catch(e){raw=null}
