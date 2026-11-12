@@ -27,7 +27,7 @@ button.on{background:#2f7cf6;border-color:#2f7cf6}
 button.dng{background:#5a1f24;border-color:#7a2a30}
 button.sm{min-height:44px;padding:0 14px;font-size:16px}
 button.unit{font-weight:700;white-space:nowrap}
-button.rest{margin:0 0 4px}
+button.rest{margin:0 0 4px;background:#0b63f6;border-color:#0b63f6;color:#fff;font-weight:700}
 input,textarea,select{background:#0b0d10;color:#e8eaed;border:1px solid #333a44;border-radius:14px;padding:14px;font-size:18px;width:100%}
 textarea{min-height:96px;resize:vertical}
 main{padding:14px;max-width:100%}
@@ -248,8 +248,9 @@ function fitAllNotes(){document.querySelectorAll('textarea.notes').forEach(fitNo
 window.addEventListener('resize',fitAllNotes);
 let tEnd=0,tInt=null,actx=null,tWarned=false;
 function unlockAudio(){try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;actx=actx||new AC();if(actx.resume)actx.resume();const buf=actx.createBuffer(1,1,22050),src=actx.createBufferSource();src.buffer=buf;src.connect(actx.destination);src.start?src.start(0):src.noteOn(0)}catch(e){}}
-function beep(){try{actx=actx||new(window.AudioContext||window.webkitAudioContext)();[0,.35,.7].forEach(o=>{const g=actx.createGain(),os=actx.createOscillator();os.frequency.value=880;os.connect(g);g.connect(actx.destination);g.gain.setValueAtTime(.4,actx.currentTime+o);g.gain.exponentialRampToValueAtTime(.001,actx.currentTime+o+.25);os.start(actx.currentTime+o);os.stop(actx.currentTime+o+.3)})}catch(e){}}
-function beepShort(){try{if(!actx)return;const t=actx.currentTime,o=actx.createOscillator(),g=actx.createGain();o.frequency.value=880;o.connect(g);g.connect(actx.destination);g.gain.setValueAtTime(.4,t);g.gain.exponentialRampToValueAtTime(.001,t+.2);o.start(t);o.stop(t+.22)}catch(e){}}
+function tone(freq,delay,dur){const o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=freq;o.connect(g);g.connect(actx.destination);const t=actx.currentTime+delay,peak=.9;g.gain.setValueAtTime(.001,t);g.gain.exponentialRampToValueAtTime(peak,t+.03);g.gain.setValueAtTime(peak,t+dur-.12);g.gain.exponentialRampToValueAtTime(.001,t+dur);o.start(t);o.stop(t+dur+.02)}
+function beep(){try{actx=actx||new(window.AudioContext||window.webkitAudioContext)();[0,.85,1.7].forEach(d=>tone(1180,d,.7))}catch(e){}}
+function beepShort(){try{if(!actx)return;tone(1420,0,.9)}catch(e){}}
 function startTimer(sec){unlockAudio();tWarned=!(sec>=10);tEnd=Date.now()+sec*1000;$('#timer').style.display='flex';clearInterval(tInt);tick();tInt=setInterval(tick,250)}
 function tick(){const r=Math.max(0,Math.ceil((tEnd-Date.now())/1000));$('#tt').textContent='⏱ '+Math.floor(r/60)+':'+String(r%60).padStart(2,'0');
  if(r>0&&r<=10&&!tWarned){tWarned=true;beepShort()}
