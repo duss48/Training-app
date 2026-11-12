@@ -229,7 +229,7 @@ document.addEventListener('click',e=>{const t=e.target.closest('button');if(!t)r
  if(t.id==='cpy'){const j=JSON.stringify(S);(navigator.clipboard?navigator.clipboard.writeText(j):Promise.reject()).then(()=>alert('Copied'),()=>{$('#paste').value=j;alert('Copy from the box below')});return}
  if(t.id==='imp'){if(confirm('Replace all data with pasted JSON?'))doImport($('#paste').value);return}
  if(t.id==='reset'){if(confirm('Reset everything to the default program? This erases your notes and weights.')){S=migrate(normalize(defaults()));save();view.tab=S.days[0].id;render()}return}
- if(t.id==='tstop')return stopTimer();if(t.id==='tplus'){tEnd+=15000;return}
+ if(t.id==='tstop')return stopTimer();if(t.id==='tplus')return addRest(15);
 });
 document.addEventListener('input',e=>{const t=e.target,D=t.dataset;
  if(D.weight){const x=findEx(D.weight);if(x){x.weight=t.value;save()}return}
@@ -246,15 +246,19 @@ document.addEventListener('change',e=>{const t=e.target,D=t.dataset;
 function fitNotes(el){if(!el||!el.classList||!el.classList.contains('notes'))return;if(!el.value){el.style.height='';return}el.style.height='auto';const b=el.offsetHeight-el.clientHeight;el.style.height=(el.scrollHeight+Math.max(0,b))+'px'}
 function fitAllNotes(){document.querySelectorAll('textarea.notes').forEach(fitNotes)}
 window.addEventListener('resize',fitAllNotes);
-let tEnd=0,tInt=null,actx=null,tWarned=false;
+let tEnd=0,tInt=null,actx=null,tWarned=false,warnAt=0,tNodes=[],silentSrc=null;
 function unlockAudio(){try{const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;actx=actx||new AC();if(actx.resume)actx.resume();const buf=actx.createBuffer(1,1,22050),src=actx.createBufferSource();src.buffer=buf;src.connect(actx.destination);src.start?src.start(0):src.noteOn(0)}catch(e){}}
-function tone(freq,delay,dur){const o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=freq;o.connect(g);g.connect(actx.destination);const t=actx.currentTime+delay,peak=.9;g.gain.setValueAtTime(.001,t);g.gain.exponentialRampToValueAtTime(peak,t+.03);g.gain.setValueAtTime(peak,t+dur-.12);g.gain.exponentialRampToValueAtTime(.001,t+dur);o.start(t);o.stop(t+dur+.02)}
-function beep(){try{actx=actx||new(window.AudioContext||window.webkitAudioContext)();[0,.85,1.7].forEach(d=>tone(1180,d,.7))}catch(e){}}
-function beepShort(){try{if(!actx)return;tone(1420,0,.9)}catch(e){}}
-function startTimer(sec){unlockAudio();tWarned=!(sec>=10);tEnd=Date.now()+sec*1000;$('#timer').style.display='flex';clearInterval(tInt);tick();tInt=setInterval(tick,250)}
-function tick(){const r=Math.max(0,Math.ceil((tEnd-Date.now())/1000));$('#tt').textContent='⏱ '+Math.floor(r/60)+':'+String(r%60).padStart(2,'0');
- if(r>0&&r<=10&&!tWarned){tWarned=true;beepShort()}
- if(r<=0){clearInterval(tInt);tInt=null;beep();if(navigator.vibrate)navigator.vibrate([300,150,300]);$('#tt').textContent='✅ Go!';setTimeout(()=>{if(!tInt)$('#timer').style.display='none'},4000)}}
-function stopTimer(){clearInterval(tInt);tInt=null;$('#timer').style.display='none'}
+function stopNode(n){try{n.stop(0)}catch(e){} try{n.disconnect()}catch(e){}}
+function stopSilent(){if(!silentSrc)return;stopNode(silentSrc);silentSrc=null}
+function cancelFuture(){if(!actx){tNodes=[];return}const now=actx.currentTime;const keep=[];tNodes.forEach(n=>{if(n._when>now+.03)stopNode(n);else keep.push(n)});tNodes=keep}
+function toneAt(freq,when,dur){const o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=freq;o.connect(g);g.connect(actx.destination);const peak=.9;g.gain.setValueAtTime(.001,when);g.gain.exponentialRampToValueAtTime(peak,when+.03);g.gain.setValueAtTime(peak,when+dur-.12);g.gain.exponentialRampToValueAtTime(.001,when+dur);o.start(when);o.stop(when+dur+.02);o._when=when;return o}
+function startSilent(until){stopSilent();try{const rate=actx.sampleRate||44100,len=rate,buf=actx.createBuffer(1,len,rate),data=buf.getChannelData(0);for(let i=0;i<len;i++)data[i]=(Math.random()*2-1)*0.02;const src=actx.createBufferSource();src.buffer=buf;src.loop=true;const g=actx.createGain();g.gain.value=0.05;src.connect(g);g.connect(actx.destination);src.start(actx.currentTime);src.stop(until);silentSrc=src}catch(e){silentSrc=null}}
+function arm(sec){if(!actx)return;cancelFuture();const endAt=actx.currentTime+sec;if(!tWarned&&sec>=10){warnAt=endAt-10;tNodes.push(toneAt(1420,warnAt,.9))}[0,.85,1.7].forEach(d=>tNodes.push(toneAt(1180,endAt+d,.7)));startSilent(endAt+2.5)}
+function startTimer(sec){unlockAudio();tNodes.forEach(stopNode);tNodes=[];stopSilent();tWarned=!(sec>=10);warnAt=tWarned?0:Infinity;tEnd=Date.now()+sec*1000;$('#timer').style.display='flex';clearInterval(tInt);arm(sec);tick();tInt=setInterval(tick,250)}
+function addRest(extra){tEnd+=extra*1000;if(actx&&actx.currentTime>=warnAt)tWarned=true;arm(Math.max(0,(tEnd-Date.now())/1000))}
+function tick(){const r=Math.max(0,Math.ceil((tEnd-Date.now())/1000));const el=$('#tt');if(!el)return;el.textContent='⏱ '+Math.floor(r/60)+':'+String(r%60).padStart(2,'0');
+ if(r<=0){clearInterval(tInt);tInt=null;if(navigator.vibrate)navigator.vibrate([300,150,300]);el.textContent='✅ Go!';setTimeout(()=>{if(!tInt){$('#timer').style.display='none'}},4000)}}
+function stopTimer(){clearInterval(tInt);tInt=null;tNodes.forEach(stopNode);tNodes=[];stopSilent();$('#timer').style.display='none'}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&tInt)tick()});
 render();
 </script></body></html>
